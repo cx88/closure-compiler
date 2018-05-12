@@ -19,6 +19,7 @@ package com.google.debugging.sourcemap;
 import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.debugging.sourcemap.Base64VLQ.CharIterator;
 import com.google.debugging.sourcemap.proto.Mapping.OriginalMapping;
@@ -52,6 +53,7 @@ public final class SourceMapConsumerV3 implements SourceMapConsumer,
       reverseSourceMapping;
   private String sourceRoot;
   private final Map<String, Object> extensions = new LinkedHashMap<>();
+  private final Map<String, String> sourcesContent = new HashMap<>();
 
   static class DefaultSourceMapSupplier implements SourceMapSupplier {
     @Override
@@ -93,6 +95,9 @@ public final class SourceMapConsumerV3 implements SourceMapConsumer,
     sourceRoot = sourceMapObject.getSourceRoot();
     sources = sourceMapObject.getSources();
     names = sourceMapObject.getNames();
+    if (sourceMapObject.getSourcesContent() != null) {
+      sourcesContent.putAll(sourceMapObject.getSourcesContent());
+    }
 
     if (lineCount >= 0) {
       lines = new ArrayList<>(lineCount);
@@ -184,6 +189,11 @@ public final class SourceMapConsumerV3 implements SourceMapConsumer,
   @Override
   public Collection<String> getOriginalSources() {
     return Arrays.asList(sources);
+  }
+
+  @Override
+  public Map<String, String> getOriginalSourcesContent() {
+    return ImmutableMap.copyOf(sourcesContent);
   }
 
   @Override

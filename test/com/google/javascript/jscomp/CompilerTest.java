@@ -258,6 +258,7 @@ public final class CompilerTest extends TestCase {
   public void testMissingSourceMapFile() throws Exception {
     Compiler compiler = new Compiler();
     compiler.initCompilerOptionsIfTesting();
+    compiler.setErrorManager(new TestErrorManager());
     File tempDir = Files.createTempDir();
     String code = SOURCE_MAP_TEST_CODE + "\n//# sourceMappingURL=foo-does-not-exist.js.map";
     File jsFile = new File(tempDir, "foo2.js");
@@ -267,14 +268,13 @@ public final class CompilerTest extends TestCase {
     input.getAstRoot(compiler);
     assertThat(compiler.inputSourceMaps).hasSize(1);
 
-    TestErrorManager errorManager = new TestErrorManager();
     for (SourceMapInput inputSourceMap : compiler.inputSourceMaps.values()) {
-      SourceMapConsumerV3 sourceMap = inputSourceMap.getSourceMap(errorManager);
+      SourceMapConsumerV3 sourceMap = inputSourceMap.getSourceMap(compiler.getErrorManager());
       assertNull(sourceMap);
     }
 
     // WARNING: Failed to resolve input sourcemap: foo-does-not-exist.js.map
-    assertEquals(1, errorManager.getWarningCount());
+    assertEquals(1, compiler.getErrorManager().getWarningCount());
   }
 
   public void testNoWarningMissingAbsoluteSourceMap() throws Exception {
@@ -1717,5 +1717,124 @@ public final class CompilerTest extends TestCase {
     }
 
     assertThat(orderedInputs).containsExactly("/a.js", "/entry.js", "/b.js").inOrder();
+  }
+
+  public void testComposedSourceMap() throws Exception {
+    List<SourceFile> sources = new ArrayList<>();
+    sources.add(
+        SourceFile.fromCode(
+            "/intermediate.js",
+            lines(
+                "function log(a) {",
+                "  console.log(a);",
+                "}",
+                "log(\"one.js\");",
+                "var WindowInfo = function() {",
+                "  this.props = [];",
+                "};",
+                "WindowInfo.prototype.propList = function() {",
+                "  for (var prop in window) {",
+                "    this.props.push(prop);",
+                "  }",
+                "};",
+                "WindowInfo.prototype.list = function() {",
+                "  log(this.props.join(\", \"));",
+                "};",
+                "(new WindowInfo).list();")));
+
+    CompilerOptions options = new CompilerOptions();
+    options.setLanguageIn(LanguageMode.ECMASCRIPT_2015);
+    options.setLanguageOut(LanguageMode.ECMASCRIPT5);
+    CompilationLevel.SIMPLE_OPTIMIZATIONS.setOptionsForCompilationLevel(options);
+    options.sourceMapOutputPath = "compiled.js.map";
+    options.applyInputSourceMaps = true;
+    options.setInputSourceMaps(
+        ImmutableMap.of(
+            "/intermediate.js",
+            new SourceMapInput(
+                SourceFile.fromCode(
+                    "/intermediate.js.map",
+                    lines(
+                        "{",
+                        "  \"version\": 3,",
+                        "  \"file\": \"intermediate.js\",",
+                        "  \"mappings\": \"AAeAA,QAASA,IAAG,CAACC,CAAD,CAAI;AACdC,SAAAF,IAAA,CAAYC,CAAZ,CAAA;AADc;AAGhBD,GAAA,CAAI,QAAJ,CAAA;ACHA,IAAMG,aACJC,QAAW,EAAG;AACZ,MAAAC,MAAA,GAAa,EAAb;AADY,CADhB;AAKE,UAAA,UAAA,SAAA,GAAAC,QAAQ,EAAG;AACT,OAAK,IAAIC,IAAT,GAAiBC,OAAjB;AACE,QAAAH,MAAAI,KAAA,CAAgBF,IAAhB,CAAA;AADF;AADS,CAAX;AAMA,UAAA,UAAA,KAAA,GAAAG,QAAI,EAAG;AACLV,KAAA,CAAI,IAAAK,MAAAM,KAAA,CAAgB,IAAhB,CAAJ,CAAA;AADK,CAAP;AAKFD,CAAC,IAAIP,UAALO,MAAA,EAAA;;\",",
+                        "  \"sources\": [\"test/fixtures/one.js\", \"test/fixtures/two.js\"],",
+                        "  \"names\": [\"log\", \"a\", \"console\", \"WindowInfo\", \"constructor\", \"props\", \"propList\", \"prop\", \"window\", \"push\", \"list\", \"join\"]",
+                        "}")))));
+
+    List<SourceFile> externs =
+        AbstractCommandLineRunner.getBuiltinExterns(options.getEnvironment());
+    Compiler compiler = new Compiler();
+    Result result = compiler.compile(externs, ImmutableList.copyOf(sources), options);
+    assertTrue(result.success);
+    assertEquals(result.errors.length, 0);
+    compiler.toSource();
+    StringBuilder sb = new StringBuilder();
+    SourceMap sourceMap = compiler.getSourceMap();
+    sourceMap.appendTo(sb, "compiled.js");
+    assertThat(sb.toString()).contains("test/fixtures/one.js");
+  }
+
+  public void testComposedSourceMapContainsSourcesContent() throws Exception {
+    List<SourceFile> sources = new ArrayList<>();
+    sources.add(
+        SourceFile.fromCode(
+            "intermediate.js",
+            lines(
+                "function log(a) {",
+                "  console.log(a);",
+                "}",
+                "log(\"one.js\");",
+                "var WindowInfo = function() {",
+                "  this.props = [];",
+                "};",
+                "WindowInfo.prototype.propList = function() {",
+                "  for (var prop in window) {",
+                "    this.props.push(prop);",
+                "  }",
+                "};",
+                "WindowInfo.prototype.list = function() {",
+                "  log(this.props.join(\", \"));",
+                "};",
+                "(new WindowInfo).list();")));
+
+    CompilerOptions options = new CompilerOptions();
+    options.setLanguageIn(LanguageMode.ECMASCRIPT_2015);
+    options.setLanguageOut(LanguageMode.ECMASCRIPT5);
+    CompilationLevel.SIMPLE_OPTIMIZATIONS.setOptionsForCompilationLevel(options);
+    options.sourceMapOutputPath = "compiled.js.map";
+    options.applyInputSourceMaps = true;
+    options.sourceMapIncludeSourcesContent = true;
+    options.setInputSourceMaps(
+        ImmutableMap.of(
+            "intermediate.js",
+            new SourceMapInput(
+                SourceFile.fromCode(
+                    "intermediate.js.map",
+                    lines(
+                        "{",
+                        "  \"version\":3,",
+                        "  \"file\":\"intermediate.js\",",
+                        "  \"mappings\":\"AAeAA,QAASA,IAAG,CAACC,CAAD,CAAI;AACdC,SAAAF,IAAA,CAAYC,CAAZ,CAAA;AADc;AAGhBD,GAAA,CAAI,QAAJ,CAAA;ACHA,IAAMG,aACJC,QAAW,EAAG;AACZ,MAAAC,MAAA,GAAa,EAAb;AADY,CADhB;AAKE,UAAA,UAAA,SAAA,GAAAC,QAAQ,EAAG;AACT,OAAK,IAAIC,IAAT,GAAiBC,OAAjB;AACE,QAAAH,MAAAI,KAAA,CAAgBF,IAAhB,CAAA;AADF;AADS,CAAX;AAMA,UAAA,UAAA,KAAA,GAAAG,QAAI,EAAG;AACLV,KAAA,CAAI,IAAAK,MAAAM,KAAA,CAAgB,IAAhB,CAAJ,CAAA;AADK,CAAP;AAKFD,CAAC,IAAIP,UAALO,MAAA,EAAA;;\",",
+                        "  \"sources\":[\"test/fixtures/one.js\",\"test/fixtures/two.js\"],",
+                        "  \"sourcesContent\":[\"/*\\n * Copyright 2016 The Closure Compiler Authors.\\n *\\n * Licensed under the Apache License, Version 2.0 (the \\\"License\\\");\\n * you may not use this file except in compliance with the License.\\n * You may obtain a copy of the License at\\n *\\n *     http://www.apache.org/licenses/LICENSE-2.0\\n *\\n * Unless required by applicable law or agreed to in writing, software\\n * distributed under the License is distributed on an \\\"AS IS\\\" BASIS,\\n * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\\n * See the License for the specific language governing permissions and\\n * limitations under the License.\\n */\\nfunction log(a) {\\n  console.log(a)\\n}\\nlog(\\'one.js\\');\\n\",\"/*\\n * Copyright 2016 The Closure Compiler Authors.\\n *\\n * Licensed under the Apache License, Version 2.0 (the \\\"License\\\");\\n * you may not use this file except in compliance with the License.\\n * You may obtain a copy of the License at\\n *\\n *     http://www.apache.org/licenses/LICENSE-2.0\\n *\\n * Unless required by applicable law or agreed to in writing, software\\n * distributed under the License is distributed on an \\\"AS IS\\\" BASIS,\\n * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\\n * See the License for the specific language governing permissions and\\n * limitations under the License.\\n */\\nclass WindowInfo {\\n  constructor() {\\n    this.props = [];\\n\\n  }\\n  propList() {\\n    for (var prop in window) {\\n      this.props.push(prop);\\n    }\\n  }\\n\\n  list() {\\n    log(this.props.join(\\', \\'));\\n  }\\n}\\n\\n(new WindowInfo()).list();\\n\"],",
+                        "  \"names\":[\"log\",\"a\",\"console\",\"WindowInfo\",\"constructor\",\"props\",\"propList\",\"prop\",\"window\",\"push\",\"list\",\"join\"]",
+                        "}")))));
+
+    List<SourceFile> externs =
+        AbstractCommandLineRunner.getBuiltinExterns(options.getEnvironment());
+    Compiler compiler = new Compiler();
+    Result result = compiler.compile(externs, ImmutableList.copyOf(sources), options);
+    assertTrue(result.success);
+    assertEquals(result.errors.length, 0);
+    compiler.toSource();
+    StringBuilder sb = new StringBuilder();
+    SourceMap sourceMap = compiler.getSourceMap();
+    sourceMap.appendTo(sb, "compiled.js");
+    String sourceMapContents = sb.toString();
+    assertThat(sourceMapContents).contains("test/fixtures/one.js");
+    assertThat(sourceMapContents).contains("sourcesContent");
+    assertThat(sourceMapContents).contains("Copyright 2016 The Closure Compiler Authors");
   }
 }

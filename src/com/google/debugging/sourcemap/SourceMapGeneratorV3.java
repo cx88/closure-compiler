@@ -251,7 +251,7 @@ public final class SourceMapGeneratorV3 implements SourceMapGenerator {
     mapping.endPosition = adjustedEnd;
 
     // Validate the mappings are in a proper order.
-    if (lastMapping != null) {
+    if (lastMapping != null && lastMapping.sourceFile.equals(mapping.sourceFile)) {
       int lastLine = lastMapping.startPosition.getLine();
       int lastColumn = lastMapping.startPosition.getColumn();
       int nextLine = mapping.startPosition.getLine();

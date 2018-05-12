@@ -69,6 +69,7 @@ import java.io.PrintStream;
 import java.io.Serializable;
 import java.util.AbstractSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -2274,10 +2275,28 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
               }
             }
 
-            // If there is a valid source map, then indicate to it that the current
-            // root node's mappings are offset by the given string builder buffer.
             if (options.sourceMapOutputPath != null) {
+              // If there is a valid source map, then indicate to it that the current
+              // root node's mappings are offset by the given string builder buffer.
               sourceMap.setStartingPosition(cb.getLineIndex(), cb.getColumnIndex());
+
+              // Read the input source maps to find any embedded source content
+              for (SourceMapInput inputSourceMap : inputSourceMaps.values()) {
+                SourceMapConsumerV3 consumer = inputSourceMap.getSourceMap(errorManager);
+                if (consumer != null) {
+                  Map<String, String> sourcesContent = consumer.getOriginalSourcesContent();
+                  for (Map.Entry<String, String> sourceContent : sourcesContent.entrySet()) {
+                    sourceMapOriginalSources.putIfAbsent(
+                        sourceContent.getKey(),
+                        SourceFile.fromCode(sourceContent.getKey(), sourceContent.getValue()));
+                  }
+                }
+              }
+
+              // Add any known input source maps content to the output map
+              for (SourceFile originalSource : sourceMapOriginalSources.values()) {
+                sourceMap.addSourceFile(originalSource);
+              }
             }
 
             // if LanguageMode is strict, only print 'use strict'
@@ -2895,18 +2914,26 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
       return null;
     }
 
-    // The sourcemap will return a path relative to the sourcemap's file.
-    // Translate it to one relative to our base directory.
-    SourceFile source =
-        SourceMapResolver.getRelativePath(sourceMap.getOriginalPath(), result.getOriginalFile());
-    if (source == null) {
-      return null;
+    // First check to see if the original file was loaded from an input source map.
+    String sourceMapOriginalPath = sourceMap.getOriginalPath();
+    String resultOriginalPath = result.getOriginalFile();
+    String relativePath = resolveSibling(sourceMapOriginalPath, resultOriginalPath);
+
+    // If the original source is not already loaded, attempt to load it from disk
+    if (getSourceMap() != null && !sourceMapOriginalSources.containsKey(relativePath)) {
+      // The sourcemap will return a path relative to the sourcemap's file.
+      // Translate it to one relative to our base directory.
+      SourceFile source =
+          SourceMapResolver.getRelativePath(sourceMap.getOriginalPath(), result.getOriginalFile());
+      if (source != null) {
+        relativePath = source.getOriginalPath();
+        sourceMapOriginalSources.putIfAbsent(relativePath, source);
+        getSourceMap().addSourceFile(source);
+      }
     }
-    String originalPath = source.getOriginalPath();
-    sourceMapOriginalSources.putIfAbsent(originalPath, source);
     return result
         .toBuilder()
-        .setOriginalFile(originalPath)
+        .setOriginalFile(relativePath)
         .setColumnPosition(result.getColumnPosition() - 1)
         .build();
   }
@@ -3673,5 +3700,29 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
   @Nullable
   CompilerInput.ModuleType getModuleTypeByName(String moduleName) {
     return moduleTypesByName.get(moduleName);
+  }
+
+  private static String resolveSibling(String path1, String path2) {
+    List<String> path1Parts = new ArrayList(Arrays.asList(path1.split("/")));
+    List<String> path2Parts = new ArrayList(Arrays.asList(path2.split("/")));
+    if (path1Parts.size() > 0) {
+      path1Parts.remove(path1Parts.size() - 1);
+    }
+
+    int path1Pos = path1Parts.size() - 1;
+    int path2Pos = 0;
+    while (path1Pos >= 0 && path2Pos < path2Parts.size()) {
+      if (path2Parts.get(path2Pos).equals(".")) {
+        path2Parts.remove(path2Pos);
+      } else if (path2Parts.get(path2Pos).equals("..")) {
+        path2Parts.remove(path2Pos);
+        path1Parts.remove(path1Parts.size() - 1);
+      } else {
+        break;
+      }
+    }
+
+    path1Parts.addAll(path2Parts);
+    return String.join("/", path1Parts);
   }
 }

@@ -16,6 +16,7 @@
 package com.google.debugging.sourcemap;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -51,7 +52,17 @@ public class SourceMapObjectParser {
         builder.setSections(listBuilder.build());
       }
 
+      String[] sources = getJavaStringArray(sourceMapRoot.get("sources"));
       builder.setSources(getJavaStringArray(sourceMapRoot.get("sources")));
+      String[] sourcesContent = getJavaStringArray(sourceMapRoot.get("sourcesContent"));
+      if (sources != null && sourcesContent != null) {
+        ImmutableMap.Builder<String, String> sourecesContentBuilder = ImmutableMap.builder();
+        for (int i = 0; i < sources.length && i < sourcesContent.length; i++) {
+          sourecesContentBuilder.put(sources[i], sourcesContent[i]);
+        }
+        builder.setSourcesContent(sourecesContentBuilder.build());
+      }
+
       builder.setNames(getJavaStringArray(sourceMapRoot.get("names")));
 
       Map<String, Object> extensions = new LinkedHashMap<>();

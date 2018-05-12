@@ -30,6 +30,7 @@ public class SourceMapObject {
   private final String[] names;
   private final List<SourceMapSection> sections;
   private final Map<String, Object> extensions;
+  private final Map<String, String> sourcesContent;
 
   private SourceMapObject(
       int version,
@@ -40,7 +41,8 @@ public class SourceMapObject {
       String[] sources,
       String[] names,
       List<SourceMapSection> sections,
-      Map<String, Object> extensions) {
+      Map<String, Object> extensions,
+      Map<String, String> sourcesContent) {
     this.version = version;
     this.lineCount = lineCount;
     this.sourceRoot = sourceRoot;
@@ -50,6 +52,7 @@ public class SourceMapObject {
     this.names = names;
     this.sections = sections;
     this.extensions = extensions;
+    this.sourcesContent = sourcesContent;
   }
 
   public int getVersion() {
@@ -88,6 +91,10 @@ public class SourceMapObject {
     return extensions;
   }
 
+  public Map<String, String> getSourcesContent() {
+    return sourcesContent;
+  }
+
   static Builder builder() {
     return new Builder();
   }
@@ -102,6 +109,7 @@ public class SourceMapObject {
     private String[] names;
     private List<SourceMapSection> sections;
     private Map<String, Object> extensions;
+    private Map<String, String> sourcesContent = null;
 
     public Builder setVersion(int version) {
       this.version = version;
@@ -148,9 +156,23 @@ public class SourceMapObject {
       return this;
     }
 
+    public Builder setSourcesContent(Map<String, String> sourcesContent) {
+      this.sourcesContent = sourcesContent;
+      return this;
+    }
+
     public SourceMapObject build() {
       return new SourceMapObject(
-          version, lineCount, sourceRoot, file, mappings, sources, names, sections, extensions);
+          version,
+          lineCount,
+          sourceRoot,
+          file,
+          mappings,
+          sources,
+          names,
+          sections,
+          extensions,
+          sourcesContent);
     }
   }
 }
