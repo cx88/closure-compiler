@@ -44,24 +44,18 @@ public class SourceMapObjectParserJs {
   // JsMethod to prevent mangling
   @JsMethod
   public static native Object get(Object o, String key) /*-{
-    return o[key];
+    return o[key] === undefined ? null : o[key];
   }-*/;
 
   @JsType(isNative = true, name = "Object", namespace = JsPackage.GLOBAL)
   private static class JsonMap {
     int version;
     String file;
-    int lineCount;
     String mappings;
     String sourceRoot;
     Section[] sections;
     String[] sources;
     String[] names;
-
-    @JsOverlay
-    public final Object getLineCount() {
-      return this.lineCount;
-    }
   }
 
   @JsType(isNative = true, name = "Object", namespace = JsPackage.GLOBAL)
@@ -93,7 +87,8 @@ public class SourceMapObjectParserJs {
 
     builder.setVersion(sourceMap.version);
     builder.setFile(sourceMap.file);
-    builder.setLineCount(sourceMap.getLineCount() != null ? sourceMap.lineCount : -1);
+    // Line count is no longer part of the source map spec. -1 is the magic "not provided" value
+    builder.setLineCount(-1);
     builder.setMappings(sourceMap.mappings);
     builder.setSourceRoot(sourceMap.sourceRoot);
 
